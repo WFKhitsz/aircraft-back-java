@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.aircaft.Application.mapper.ShoppingMapper">
+
+    <select id="getAllShopping" resultType="com.aircaft.Application.pojo.vo.ShoppingVO">
+        select center.spend, prop_effect, prop_name
+        from aircraft.shopping_centre center
+                 left join aircraft.prop
+                           on center.prop_id = prop.id
+    </select>
+
+</mapper>

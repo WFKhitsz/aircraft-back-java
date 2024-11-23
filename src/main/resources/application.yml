@@ -1,0 +1,46 @@
+server:
+  port: 8080
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 2
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    username: root
+    password: admin123
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306
+
+
+
+
+
+
+mybatis:
+  #mapper????
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.sky.entity
+  configuration:
+    #??????
+    map-underscore-to-camel-case: true
+logging:
+  level:
+    com:
+      sky:
+        mapper: debug
+        service: info
+        controller: info
+sky:
+  jwt:
+    # ??jwt??????????
+    admin-secret-key: itcast
+    # ??jwt????
+    admin-ttl: 7200000000
+    # ?????????????
+    admin-token-name: token
+
+    user-secret-key: itcast
+    user-ttl: 72000000000
+    user-token-name: authentication

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.aircaft.Application.mapper.UserMapper">
+
+    <select id="getPlayerBackpackProps" resultType="com.aircaft.Application.pojo.vo.BackPackPropsVO"
+            parameterType="int">
+        select backpack.amount, prop.id as prop_id, prop.prop_name, prop.prop_effect
+        from aircraft.player_backpack backpack
+                 left join aircraft.prop prop
+                           on backpack.prop_id = prop.id
+        where backpack.player_id = #{id}
+    </select>
+
+</mapper>
