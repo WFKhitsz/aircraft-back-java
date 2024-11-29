@@ -6,14 +6,8 @@ import com.aircaft.Application.common.constant.WebSocketConstant;
 import com.aircaft.Application.common.properties.JwtProperties;
 import com.aircaft.Application.common.utils.JsonUtil;
 import com.aircaft.Application.common.utils.JwtUtil;
-import com.aircaft.Application.pojo.dto.GameScoreDTO;
-import com.aircaft.Application.pojo.dto.OnlinePlayGameOver;
-import com.aircaft.Application.pojo.dto.PlayerSearchDTO;
-import com.aircaft.Application.pojo.dto.SendMessageDTO;
-import com.aircaft.Application.pojo.entity.Game;
-import com.aircaft.Application.pojo.entity.GroupMessage;
-import com.aircaft.Application.pojo.entity.Player;
-import com.aircaft.Application.pojo.entity.SinglePlayerChat;
+import com.aircaft.Application.pojo.dto.*;
+import com.aircaft.Application.pojo.entity.*;
 import com.aircaft.Application.pojo.vo.*;
 import com.aircaft.Application.service.UserService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -41,84 +35,39 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 @Component
 public class PlayerWebSocket {
+    private static final ScheduledExecutorService onlinePlayMatch = Executors.newScheduledThreadPool(2);
+    private static final ScheduledExecutorService sendGameInfoToMatchPlayer = Executors.newScheduledThreadPool(2);
     public static Map<String, Session> sessionMap = new ConcurrentHashMap<>();
     public static Map<String, Integer> playerNameToId = new ConcurrentHashMap<>();
     public static List<String> onLinePlayerName = new CopyOnWriteArrayList<>();
     public static AtomicInteger onLinePlayerAmount = new AtomicInteger(0);
-    public static List<Integer> onlinePlayPlayerReadyMatch = new CopyOnWriteArrayList<>();
+    //难度为easy的匹配队列
+    public static List<Integer> easyOnlinePlayPlayerReadyMatch = new CopyOnWriteArrayList<>();
+    //难度为normal的匹配队列
+    public static List<Integer> normalOnlinePlayPlayerReadyMatch = new CopyOnWriteArrayList<>();
+    //难度为difficulty的匹配队列
+    public static List<Integer> difficultyOnlinePlayPlayerReadyMatch = new CopyOnWriteArrayList<>();
+
+    //    public static List<Integer> onlinePlayPlayerReadyMatch = new CopyOnWriteArrayList<>();
     public static Map<Integer, Integer> onlinePlayPlayerBeginMatch = new ConcurrentHashMap<>();
     //玩家对应的具体游戏
     public static Map<Integer, Game> playerToGame = new ConcurrentHashMap<>();
     public static Map<Integer, Integer> onlinePlayerState = new ConcurrentHashMap<>();
-
-
     private static JwtProperties jwtProperties;
     private static UserService userService;
     private static List<Player> playerList;
-    private static ScheduledExecutorService onlinePlayMatch = Executors.newScheduledThreadPool(2);
-    private static ScheduledExecutorService sendGameInfoToMatchPlayer = Executors.newScheduledThreadPool(2);
 
+    //玩家的匹配的游戏应该可以选择不同的游戏难度，那么就应该有多个不同的匹配队列
     static {
         onlinePlayMatch.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
-                if (onlinePlayPlayerReadyMatch.size() <= 1) {
-                    return;
-                }
-                String player1Name = null;
-                String player2Name = null;
+                //easy难度的游戏匹配逻辑
+//                matchPlayerFromDifferentGameType(onlinePlayPlayerReadyMatch, 1);
+                matchPlayerFromDifferentGameType(easyOnlinePlayPlayerReadyMatch, 1);
+                matchPlayerFromDifferentGameType(normalOnlinePlayPlayerReadyMatch, 2);
+                matchPlayerFromDifferentGameType(difficultyOnlinePlayPlayerReadyMatch, 3);
 
-                Integer player1Id = onlinePlayPlayerReadyMatch.get(0);
-                onlinePlayPlayerReadyMatch.remove(0);
-                Integer player2Id = onlinePlayPlayerReadyMatch.get(0);
-                onlinePlayPlayerReadyMatch.remove(0);
-                onlinePlayPlayerBeginMatch.put(player1Id, player2Id);
-                log.info("游戏匹配成功：player1Id：{} player2Id：{}", player1Id, player2Id);
-                //创建游戏并且设置它的初始值
-                Game game = new Game();
-                game.setPlayer1Id(player1Id);
-                game.setPlayer2Id(player2Id);
-                game.setPlayer1Score(0);
-                game.setPlayer2Score(0);
-                game.setGameTime(LocalDateTime.now());
-                //这里的排行榜先写死成1
-                game.setRank(1);
-
-                //这里默认设置游戏难度为1
-                game.setGameDifficult(1);
-                //游戏才刚开始不设置游戏分数，应该在游戏结束后才设置
-                //把游戏和玩家关联起来
-                playerToGame.put(player1Id, game);
-                playerToGame.put(player2Id, game);
-                onlinePlayerState.put(player1Id, WebSocketConstant.ONLINE_GAME_STATE_START);
-                onlinePlayerState.put(player2Id, WebSocketConstant.ONLINE_GAME_STATE_START);
-                //找到玩家的名字
-                for (Player player : playerList) {
-                    if (player.getPlayerId() == player1Id) {
-                        player1Name = player.getUserName();
-                    } else if (player.getPlayerId() == player2Id) {
-                        player2Name = player.getUserName();
-                    }
-                }
-                //获取到玩家对应的session
-                Session player1Session = sessionMap.get(player1Name);
-                Session player2Session = sessionMap.get(player2Name);
-                //设置开始游戏信号
-                OnlinePlayStart toPlayer1 = new OnlinePlayStart();
-                OnlinePlayStart toPlayer2 = new OnlinePlayStart();
-                toPlayer1.setType(WebSocketConstant.ONLINE_PLAY_START);
-                toPlayer1.setAnotherPlayerId(player2Id);
-                toPlayer1.setAnotherPlayerName(player2Name);
-                toPlayer2.setType(WebSocketConstant.ONLINE_PLAY_START);
-                toPlayer2.setAnotherPlayerId(player1Id);
-                toPlayer2.setAnotherPlayerName(player1Name);
-                try {
-                    player1Session.getBasicRemote().sendText(JsonUtil.toJson(toPlayer1));
-                    player2Session.getBasicRemote().sendText(JsonUtil.toJson(toPlayer2));
-                } catch (Exception e) {
-                    log.info("onlinePlayMatch eorr:{}", e);
-                    e.printStackTrace();
-                }
             }
         }, 1, 1, TimeUnit.SECONDS);
 
@@ -137,7 +86,10 @@ public class PlayerWebSocket {
                         ScoreMessageVo messageVo = new ScoreMessageVo();
                         messageVo.setGame(game);
                         messageVo.setType(WebSocketConstant.ONLINE_PLAY_ON);
-                        session1.getAsyncRemote().sendText(JsonUtil.toJson(messageVo));
+                        synchronized (session1) {
+                            session1.getAsyncRemote().sendText(JsonUtil.toJson(messageVo));
+                        }
+
                     }
                 } catch (Exception e) {
                     System.out.println(e.getMessage());
@@ -156,6 +108,95 @@ public class PlayerWebSocket {
     private boolean heartBeat = false;
     private CompletableFuture<Void> pongReceived = new CompletableFuture<>();
 
+    private static void matchPlayerFromDifferentGameType(List<Integer> readyMatch, Integer gameDiffculty) {
+
+        if (readyMatch.size() <= 1) {
+            return;
+        }
+        String player1Name = null;
+        String player2Name = null;
+
+        Integer player1Id = readyMatch.get(0);
+        readyMatch.remove(0);
+        Integer player2Id = readyMatch.get(0);
+        readyMatch.remove(0);
+        onlinePlayPlayerBeginMatch.put(player1Id, player2Id);
+        log.info("{} type 游戏匹配成功：player1Id：{} player2Id：{}", gameDiffculty, player1Id, player2Id);
+        //创建游戏并且设置它的初始值
+        Game game = new Game();
+        game.setPlayer1Id(player1Id);
+        game.setPlayer2Id(player2Id);
+        game.setPlayer1Score(0);
+        game.setPlayer2Score(0);
+        game.setGameTime(LocalDateTime.now());
+        //这里的排行榜和难度一样
+        game.setRank(gameDiffculty);
+
+        //这里设置我们传递过来的难度参数
+        game.setGameDifficult(gameDiffculty);
+        //游戏才刚开始不设置游戏分数，应该在游戏结束后才设置
+        //把游戏和玩家关联起来
+        playerToGame.put(player1Id, game);
+        playerToGame.put(player2Id, game);
+        onlinePlayerState.put(player1Id, WebSocketConstant.ONLINE_GAME_STATE_START);
+        onlinePlayerState.put(player2Id, WebSocketConstant.ONLINE_GAME_STATE_START);
+        //找到玩家的名字
+        for (Player player : playerList) {
+            if (player.getPlayerId() == player1Id) {
+                player1Name = player.getUserName();
+            } else if (player.getPlayerId() == player2Id) {
+                player2Name = player.getUserName();
+            }
+        }
+        //获取到玩家对应的session
+        Session player1Session = sessionMap.get(player1Name);
+        Session player2Session = sessionMap.get(player2Name);
+        //设置开始游戏信号
+        OnlinePlayStart toPlayer1 = new OnlinePlayStart();
+        OnlinePlayStart toPlayer2 = new OnlinePlayStart();
+        toPlayer1.setType(WebSocketConstant.ONLINE_PLAY_START);
+        toPlayer1.setAnotherPlayerId(player2Id);
+        toPlayer1.setAnotherPlayerName(player2Name);
+        toPlayer2.setType(WebSocketConstant.ONLINE_PLAY_START);
+        toPlayer2.setAnotherPlayerId(player1Id);
+        toPlayer2.setAnotherPlayerName(player1Name);
+        try {
+            synchronized (player1Session) {
+                player1Session.getBasicRemote().sendText(JsonUtil.toJson(toPlayer1));
+            }
+            synchronized (player2Session) {
+                player2Session.getBasicRemote().sendText(JsonUtil.toJson(toPlayer2));
+            }
+        } catch (Exception e) {
+            log.info("onlinePlayMatch err:{}", e.getMessage());
+            e.printStackTrace();
+        }
+
+    }
+
+    //提供一个静态的接口方法，用于查询一个用户是否已经登录
+    public static boolean isThisUserAlreadyLogin(String userName) {
+        //我们只需要去sessionmap里面查一下就好
+        return sessionMap.containsKey(userName);
+    }
+
+    //提供一个强制下线用户的方法
+    public static void logoutUser(String userName) {
+        try {
+            LogoutMessage message = new LogoutMessage();
+            message.setType(WebSocketConstant.USER_NEED_TO_LOGOUT);
+            Session session1 = sessionMap.get(userName);
+            synchronized (session1) {
+                session1.getBasicRemote().sendText(JsonUtil.toJson(message));
+                session1.close();
+            }
+
+
+        } catch (Exception e) {
+            log.info("error : {}", e.getMessage());
+        }
+    }
+
     private static Session idToSession(Integer playerId) {
         String playerName = null;
         for (Map.Entry<String, Integer> entry : playerNameToId.entrySet()) {
@@ -171,7 +212,12 @@ public class PlayerWebSocket {
         ReceiveMessageVO receiveMessageVO = new ReceiveMessageVO();
         BeanUtils.copyProperties(dto, receiveMessageVO);
         receiveMessageVO.setType(WebSocketConstant.SEND_MESSAGE_FROM_PLAYER_TO_PLAYER);
-        toPlayerSession.getAsyncRemote().sendText(JsonUtil.toJson(receiveMessageVO));
+        //给对应的session加锁，防止多线程问题
+        synchronized (toPlayerSession) {
+            toPlayerSession.getAsyncRemote().sendText(JsonUtil.toJson(receiveMessageVO));
+        }
+
+
         SinglePlayerChat chat = new SinglePlayerChat();
         chat.setPlayer1Id(PlayerWebSocket.playerNameToId.get(dto.getFromPlayerName()));
         chat.setPlayer2Id(PlayerWebSocket.playerNameToId.get(dto.getToPlayerName()));
@@ -181,6 +227,7 @@ public class PlayerWebSocket {
     }
 
     public void sendAllPlayerOnlinePlayer() {
+        //由于session不是线程安全的，所以必须加锁，
         try {
             for (String key : sessionMap.keySet()) {
                 sendOnlinePlayers(sessionMap.get(key));
@@ -209,7 +256,7 @@ public class PlayerWebSocket {
             String playerName = session.getQueryString().split("&")[2].split("=")[1];
             Claims claims = JwtUtil.parseJWT(jwtProperties.getUserSecretKey(), token);
             Integer userId = Integer.valueOf(claims.get(JwtClaimsConstant.USER_ID).toString());
-            heartBeat = true;
+            this.heartBeat = true;
             // 每隔 10 秒发送 ping 帧，并等待 pong
             session.addMessageHandler(PongMessage.class, message -> {
                 pongReceived.complete(null);
@@ -238,7 +285,10 @@ public class PlayerWebSocket {
         onlinePlayerVO.setOnLinePlayerAmount(onLinePlayerAmount);
         onlinePlayerVO.setOnLinePlayerName(onLinePlayerName);
         onlinePlayerVO.setType(WebSocketConstant.SEND_ONLINE_PLAYER_MESSAGE);
-        session.getBasicRemote().sendText(JsonUtil.toJson(onlinePlayerVO));
+        synchronized (session) {
+            session.getBasicRemote().sendText(JsonUtil.toJson(onlinePlayerVO));
+        }
+
     }
 
     @OnClose
@@ -253,6 +303,10 @@ public class PlayerWebSocket {
         }
         if (executorService != null && !executorService.isShutdown()) {
             executorService.shutdown();
+        }
+        // 3. 如果 pongReceived CompletableFuture 尚未完成，可以选择取消或完成
+        if (pongReceived != null && !pongReceived.isDone()) {
+            pongReceived.complete(null);  // 或者调用 pongReceived.cancel(true);
         }
         onLinePlayerAmount.decrementAndGet();
         onLinePlayerName.remove(this.playerName);
@@ -272,7 +326,13 @@ public class PlayerWebSocket {
             }
         }
         //如果玩家在匹配队列里面的话也需要移除
-        onlinePlayPlayerReadyMatch.remove(playerId);
+        removePlayerfromAllReadyMatch(playerId);
+//        onlinePlayPlayerReadyMatch.remove(playerId);
+        //销毁多例Bean，释放内存,解除内部对象的引用，和外部对象的引用
+        executorService = null;
+        future = null;
+        pongReceived = null;
+
 
     }
 
@@ -301,9 +361,11 @@ public class PlayerWebSocket {
                     break;
                 //游戏匹配，等待匹配对手，进入匹配队列
                 case WebSocketConstant.ONLINE_PLAY_SEARCH_ANOTHER_PLAYER:
+                    //TODO 前端请加上难度参数
                     PlayerSearchDTO playerSearchDTO = JsonUtil.fromJson(message, PlayerSearchDTO.class);
                     log.info("有玩家请求匹配:{}", playerSearchDTO);
-                    onlinePlayPlayerReadyMatch.add(playerSearchDTO.getPlayerId());
+                    addPlayerTodifferentTypeGameMatchList(playerSearchDTO);
+
                     break;
                 //游戏结束
                 case WebSocketConstant.ONLINE_GAME_STATE_OVER:
@@ -321,7 +383,10 @@ public class PlayerWebSocket {
                 //玩家取消匹配信息
                 case WebSocketConstant.CANCEL_ONLINE_PLAY_SEARCH_ANOTHER_PLAYER:
                     log.info("玩家取消匹配");
-                    onlinePlayPlayerReadyMatch.remove(playerId);
+                    //前端需要修改请求逻辑
+                    PlayerCancelSearch playerCancelSearch = JsonUtil.fromJson(message, PlayerCancelSearch.class);
+                    removePlayerTodifferentTypeGameMatchList(playerCancelSearch);
+//                    onlinePlayPlayerReadyMatch.remove(playerId);
                     break;
                 default:
                     break;
@@ -330,6 +395,47 @@ public class PlayerWebSocket {
             System.out.println(e.getMessage());
             throw new RuntimeException(e);
         }
+    }
+
+    private void addPlayerTodifferentTypeGameMatchList(PlayerSearchDTO playerSearchDTO) {
+        switch (playerSearchDTO.getDifficulty()) {
+            case 1:
+                easyOnlinePlayPlayerReadyMatch.add(playerSearchDTO.getPlayerId());
+                break;
+            case 2:
+                normalOnlinePlayPlayerReadyMatch.add(playerSearchDTO.getPlayerId());
+                break;
+            case 3:
+                difficultyOnlinePlayPlayerReadyMatch.add(playerSearchDTO.getPlayerId());
+                break;
+            default:
+                log.info("前端传递过来的游戏难度参数有错误");
+                break;
+        }
+
+    }
+
+    private void removePlayerTodifferentTypeGameMatchList(PlayerCancelSearch playerCancelSearch) {
+        switch (playerCancelSearch.getDifficulty()) {
+            case 1:
+                easyOnlinePlayPlayerReadyMatch.remove(playerCancelSearch.getPlayerId());
+                break;
+            case 2:
+                normalOnlinePlayPlayerReadyMatch.remove(playerCancelSearch.getPlayerId());
+                break;
+            case 3:
+                difficultyOnlinePlayPlayerReadyMatch.remove(playerCancelSearch.getPlayerId());
+                break;
+            default:
+                log.info("前端传递过来的游戏难度参数有错误");
+                break;
+        }
+    }
+
+    private void removePlayerfromAllReadyMatch(Integer playerId) {
+        easyOnlinePlayPlayerReadyMatch.remove(playerId);
+        normalOnlinePlayPlayerReadyMatch.remove(playerId);
+        difficultyOnlinePlayPlayerReadyMatch.remove(playerId);
     }
 
     private void changOnPlayPlayerGameScore(GameScoreDTO gameScoreDTO) {
@@ -345,7 +451,6 @@ public class PlayerWebSocket {
             }
         }
     }
-
 
     private void playerGameOver(OnlinePlayGameOver onlinePlayGameOver) {
         //获取一下玩家的游戏对象
@@ -383,9 +488,15 @@ public class PlayerWebSocket {
             try {
                 log.info("try-catch");
                 //向两个玩家发送游戏结束信息
-                session.getBasicRemote().sendText(JsonUtil.toJson(gameOverVO));
+                synchronized (this.session) {
+                    session.getBasicRemote().sendText(JsonUtil.toJson(gameOverVO));
+                }
+
                 if (player2Session != null) {
-                    player2Session.getBasicRemote().sendText(JsonUtil.toJson(gameOverVO));
+                    synchronized (player2Session) {
+                        player2Session.getBasicRemote().sendText(JsonUtil.toJson(gameOverVO));
+                    }
+
                 }
                 //将两个玩家移除
                 removePlayerFromPlayList(onlinePlayGameOver.getPlayerId());
@@ -412,7 +523,6 @@ public class PlayerWebSocket {
         onlinePlayPlayerBeginMatch.remove(playerId);
     }
 
-
     public void sendToAnotherGroupPlayers(GroupMessage groupMessage) throws Exception {
         final List<Player> playerChatGroupAnotherPlayers = userService.getPlayerChatGroupAnotherPlayers(groupMessage.getGroupId());
         log.info("PlayerList: {}", playerChatGroupAnotherPlayers);
@@ -422,7 +532,11 @@ public class PlayerWebSocket {
                 GroupMessage messageFromGroupPlayer = new GroupMessage();
                 BeanUtils.copyProperties(groupMessage, messageFromGroupPlayer);
                 messageFromGroupPlayer.setType(WebSocketConstant.MESSAGE_FROM_GROUP_TO_PLAYER);
-                sessionMap.get(player.getUserName()).getAsyncRemote().sendText(JsonUtil.toJson(messageFromGroupPlayer));
+                Session session1 = sessionMap.get(player.getUserName());
+                synchronized (session1) {
+                    session1.getAsyncRemote().sendText(JsonUtil.toJson(messageFromGroupPlayer));
+                }
+
             }
         }
     }
@@ -446,7 +560,9 @@ public class PlayerWebSocket {
     private void sendPingAndCheckPong(Session session) {
         try {
             if (session.isOpen()) {
-                session.getAsyncRemote().sendPing(ByteBuffer.wrap(new byte[0]));
+                synchronized (session) {
+                    session.getAsyncRemote().sendPing(ByteBuffer.wrap(new byte[0]));
+                }
                 // 如果在 5 秒内没有收到 pong，则关闭连接
                 executorService.schedule(() -> {
                     if (!pongReceived.isDone()) {

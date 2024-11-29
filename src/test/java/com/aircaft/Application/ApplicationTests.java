@@ -20,7 +20,7 @@ class ApplicationTests {
 
     @Test
     void contextLoads() {
-        log.info("list : {}", userMapper.getPlayerChatMessage(1, 2));
+
 
     }
 

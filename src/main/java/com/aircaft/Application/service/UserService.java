@@ -2,6 +2,7 @@ package com.aircaft.Application.service;
 
 import com.aircaft.Application.common.Result;
 import com.aircaft.Application.pojo.dto.AircarftAttributesDTO;
+import com.aircaft.Application.pojo.dto.ManageApply;
 import com.aircaft.Application.pojo.dto.UserLoginDTO;
 import com.aircaft.Application.pojo.entity.*;
 import com.aircaft.Application.pojo.vo.BackPackPropsVO;
@@ -44,4 +45,17 @@ public interface UserService {
     void saveGameInfo(Game game);
 
     List<SendGroupChatMessage> getChatGroupHistoryMessage(Integer groupId);
+
+    void wantToJoinChatGroup(Integer chatGroupId);
+
+    List<ChatGroupApply> getPlayerGroupApply();
+
+
+    List<ChatGroupApply> getGroupApply();
+
+    void manageGroupApply(ManageApply manageApply);
+
+    List<MailMessage> getPlayerMailMessage();
+
+    void changeMailMessage();
 }

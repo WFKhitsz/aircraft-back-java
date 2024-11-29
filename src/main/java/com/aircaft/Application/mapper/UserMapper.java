@@ -2,6 +2,7 @@ package com.aircaft.Application.mapper;
 
 import com.aircaft.Application.common.Result;
 import com.aircaft.Application.pojo.dto.AircarftAttributesDTO;
+import com.aircaft.Application.pojo.dto.ManageApply;
 import com.aircaft.Application.pojo.entity.*;
 import com.aircaft.Application.pojo.vo.BackPackPropsVO;
 import com.aircaft.Application.pojo.vo.GetFriendsVO;
@@ -14,8 +15,7 @@ import java.util.List;
 public interface UserMapper {
     @Select("select * from aircraft.player where user_name = #{username}")
     Player getByName(@Param("username") String username);
-
-
+    
     List<BackPackPropsVO> getPlayerBackpackProps(@Param("id") Integer id);
 
     @Update("update aircraft.player_backpack set amount = amount - 1 where player_id = #{playerId} and prop_id = #{propId}")
@@ -86,4 +86,28 @@ public interface UserMapper {
 
     @Select("select * from aircraft.chat_group where group_name = #{groupName}")
     ChatGroup getGroupByName(@Param("groupName") String groupName);
+
+    @Insert("insert into aircraft.apply_for_join_chat_group (apply_group_id, apply_player_id) VALUES (#{chatGroupId},#{currentId})")
+    void wantToJoinChatGroup(@Param("currentId") Integer currentId, @Param("chatGroupId") Integer chatGroupId);
+
+    @Select("select * from aircraft.apply_for_join_chat_group where apply_group_id = #{chatGroupId}  and apply_player_id = #{currentId}")
+    ChatGroupApply isPlayerAlreadyApply(@Param("currentId") Integer currentId, @Param("chatGroupId") Integer chatGroupId);
+
+    @Select("select apply_group_id,apply_player_id,group_name from aircraft.apply_for_join_chat_group left join aircraft.chat_group on apply_for_join_chat_group.apply_group_id = chat_group.id   where apply_player_id = #{currentId};")
+    List<ChatGroupApply> getPlayerGroupApply(Integer currentId);
+
+    @Select("select apply_for_join_chat_group.apply_group_id,apply_for_join_chat_group.apply_player_id ,group_name ,player.user_name from aircraft.create_group_chat left join aircraft.apply_for_join_chat_group on create_group_chat.group_id = apply_for_join_chat_group.apply_group_id left join aircraft.player on apply_player_id = player.player_id where create_group_chat.player_id = #{currentId}")
+    List<ChatGroupApply> getGroupApply(@Param("currentId") Integer currentId);
+
+    @Delete("delete from aircraft.apply_for_join_chat_group where apply_player_id = #{playerId} and apply_group_id = #{groupId}")
+    void delPlayerApply(ManageApply manageApply);
+
+    @Insert("insert into aircraft.player_mail (player_id, message, from_player_id, send_time, is_read) VALUES (#{playerId},#{message},#{fromPlayerId},#{sendTime},#{isRead})")
+    void insertMailMessage(MailMessage mailMessage);
+
+    @Select("select * from aircraft.player_mail where player_id = #{currentId} ")
+    List<MailMessage> getPlayerMailMessage(@Param("currentId") Integer currentId);
+
+    @Update("update aircraft.player_mail set is_read = 1 where player_id  = #{currentId}")
+    void changeMailMessage(@Param("currentId") Integer currentId);
 }

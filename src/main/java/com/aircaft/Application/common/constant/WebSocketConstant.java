@@ -17,6 +17,7 @@ public class WebSocketConstant {
     public static final int ONLINE_GAME_STATE_START = 11;
     public static final int ONLINE_GAME_STATE_OVER = 12;
     public static final int CANCEL_ONLINE_PLAY_SEARCH_ANOTHER_PLAYER = 13;
+    public static final int USER_NEED_TO_LOGOUT = 14;
 
 
 }

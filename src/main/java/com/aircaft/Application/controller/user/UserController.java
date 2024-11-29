@@ -5,11 +5,9 @@ import com.aircaft.Application.common.constant.JwtClaimsConstant;
 import com.aircaft.Application.common.properties.JwtProperties;
 import com.aircaft.Application.common.utils.JwtUtil;
 import com.aircaft.Application.pojo.dto.AircarftAttributesDTO;
+import com.aircaft.Application.pojo.dto.ManageApply;
 import com.aircaft.Application.pojo.dto.UserLoginDTO;
-import com.aircaft.Application.pojo.entity.ChatGroup;
-import com.aircaft.Application.pojo.entity.Player;
-import com.aircaft.Application.pojo.entity.SendGroupChatMessage;
-import com.aircaft.Application.pojo.entity.SinglePlayerChat;
+import com.aircaft.Application.pojo.entity.*;
 import com.aircaft.Application.pojo.vo.BackPackPropsVO;
 import com.aircaft.Application.pojo.vo.GetFriendsVO;
 import com.aircaft.Application.pojo.vo.UserLoginVo;
@@ -95,13 +93,41 @@ public class UserController {
         return Result.success(userService.getAllChatGroup());
     }
 
-
+    //TODO 下面的joinChatGroup应该废弃 这里的加入群聊的功能还是太简单了，应该向群聊的管理员发出加入申请，等管理员批准后才能加入
     @PostMapping("/joinChatGroup/{chatGroupId}")
     public Result joinChatGroup(@PathVariable(value = "chatGroupId") Integer chatGroupId) {
         userService.joinChatGroup(chatGroupId);
-
         return Result.success();
     }
+
+    //下面是申请操作，对应的就是原来的join操做
+    @PostMapping("/wantToJoinChatGroup/{chatGroupId}")
+    public Result wantToJoinChatGroup(@PathVariable(value = "chatGroupId") Integer chatGroupId) {
+        userService.wantToJoinChatGroup(chatGroupId);
+        return Result.success();
+    }
+
+    //玩家可以管理自己的群聊的申请，是不是应该给玩家配置一个收信箱，让他们知道有一些相关的消息，
+    @GetMapping("/getPlayerGroupApply")
+    public Result<List<ChatGroupApply>> getPlayerGroupApply() {
+        List<ChatGroupApply> list = userService.getPlayerGroupApply();
+        return Result.success(list);
+    }
+
+    //群管理员管理群聊的加入申请,这里我们希望可以得到申请玩家的名字
+    @GetMapping("/getGroupApply")
+    public Result<List<ChatGroupApply>> getGroupApply() {
+        return Result.success(userService.getGroupApply());
+    }
+
+    //群管理员可以同意或拒绝,为了安全应该校验发送请求方到底有没有权限
+    @PostMapping("/manageGroupApply")
+    public Result manageGroupApply(@RequestBody ManageApply manageApply) {
+        userService.manageGroupApply(manageApply);
+        return Result.success();
+
+    }
+
 
     @GetMapping("/getPlayerChatGroup")
     public Result<List<ChatGroup>> getPlayerChatGroup() {
@@ -119,5 +145,19 @@ public class UserController {
         List<SendGroupChatMessage> message = userService.getChatGroupHistoryMessage(groupId);
         return Result.success(message);
     }
+
+
+    //获取自己的邮箱信息
+    @GetMapping("/getPlayerMailMessage")
+    public Result<List<MailMessage>> getPlayerMailMessage() {
+        return Result.success(userService.getPlayerMailMessage());
+    }
+
+    //修改邮箱的消息状态为已读,玩家打开邮箱的时候触发
+    public Result changeMailMessage() {
+        userService.changeMailMessage();
+        return Result.success();
+    }
+
 
 }

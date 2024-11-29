@@ -4,8 +4,10 @@ import com.aircaft.Application.common.BaseContext;
 import com.aircaft.Application.common.Result;
 import com.aircaft.Application.common.constant.MessageConstant;
 import com.aircaft.Application.common.exception.*;
+import com.aircaft.Application.controller.user.PlayerWebSocket;
 import com.aircaft.Application.mapper.UserMapper;
 import com.aircaft.Application.pojo.dto.AircarftAttributesDTO;
+import com.aircaft.Application.pojo.dto.ManageApply;
 import com.aircaft.Application.pojo.dto.UserLoginDTO;
 import com.aircaft.Application.pojo.entity.*;
 import com.aircaft.Application.pojo.vo.BackPackPropsVO;
@@ -16,7 +18,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 
 @Service
@@ -28,6 +32,10 @@ public class UserServiceImpl implements UserService {
     public Player login(UserLoginDTO dto) {
         String username = dto.getUserName();
         String password = dto.getPassword();
+        //如果一个用户已经在线的话，那么后面登录的用户就需要顶替他，使得只有一个用户在线
+        if (PlayerWebSocket.isThisUserAlreadyLogin(username)) {
+            PlayerWebSocket.logoutUser(username);
+        }
         Player player = userMapper.getByName(username);
         if (player == null) {
             throw new AccountNotFoundException(MessageConstant.ACCOUNT_NOT_FOUND);
@@ -179,6 +187,93 @@ public class UserServiceImpl implements UserService {
     public List<SendGroupChatMessage> getChatGroupHistoryMessage(Integer groupId) {
 
         return userMapper.getChatGroupHistoryMessage(groupId, BaseContext.getCurrentId());
+    }
+
+    @Override
+    public void wantToJoinChatGroup(Integer chatGroupId) {
+        //需要检查玩家是不是已经加入了，避免重复加入
+        final JoinGroupChat chatGroupPlayerByPlayerId = userMapper.getChatGroupPlayerByPlayerId(BaseContext.getCurrentId(), chatGroupId);
+        if (chatGroupPlayerByPlayerId != null) {
+            throw new AlreadyJoinChatGroupException(MessageConstant.PLAYER_ALREADY_JOIN_CHAT_GROUP);
+        }
+        //我们还需要检查是否重复申请
+        ChatGroupApply chatGroupApply = userMapper.isPlayerAlreadyApply(BaseContext.getCurrentId(), chatGroupId);
+        if (chatGroupApply != null) {
+            throw new PlayerAlreadyApply("玩家已经申请过了，无需重复申请");
+        }
+        userMapper.wantToJoinChatGroup(BaseContext.getCurrentId(), chatGroupId);
+
+    }
+
+    @Override
+    public List<ChatGroupApply> getPlayerGroupApply() {
+        return userMapper.getPlayerGroupApply(BaseContext.getCurrentId());
+    }
+
+    @Override
+    //获得自己管理的群聊申请
+    public List<ChatGroupApply> getGroupApply() {
+        List<ChatGroupApply> groupApply = userMapper.getGroupApply(BaseContext.getCurrentId());
+        if (groupApply.get(0).getApplyGroupId() == null) {
+            groupApply = null;
+        }
+        return groupApply;
+    }
+
+    @Override
+    public void manageGroupApply(ManageApply manageApply) {
+        String groupName = "";
+
+        MailMessage mailMessage = new MailMessage();
+        mailMessage.setFromPlayerId(BaseContext.getCurrentId());
+        mailMessage.setIsRead(0);
+        mailMessage.setSendTime(LocalDateTime.now());
+        mailMessage.setPlayerId(manageApply.getPlayerId());
+
+        manageApply.setPlayerId(userMapper.getIdByName(manageApply.getPlayerName()));
+        final List<ChatGroupApply> groupApply = getGroupApply();
+        boolean isYouHasRightToManageThisGroup = false;
+        for (ChatGroupApply chatGroupApply : groupApply) {
+            if (Objects.equals(chatGroupApply.getApplyGroupId(), manageApply.getGroupId())) {
+                //申请修改的群聊在自己的管理群聊里面，其实这一步完全是为了安全考虑
+                groupName = chatGroupApply.getGroupName();
+                isYouHasRightToManageThisGroup = true;
+                break;
+            }
+        }
+        if (!isYouHasRightToManageThisGroup) {
+            throw new NoRightToManageThisGroup("非法访问无权限的群聊");
+        }
+        if (manageApply.getType() == 0) {
+            //拒绝,这里就应该涉及到玩家的收信箱了
+            userMapper.delPlayerApply(manageApply);
+
+            String message = "您申请加入的" + groupName + "群聊" + "已经被管理员拒绝";
+            mailMessage.setMessage(message);
+            userMapper.insertMailMessage(mailMessage);
+            //发出通知到对应玩家的收信箱里
+        } else if (manageApply.getType() == 1) {
+            //同意
+            userMapper.delPlayerApply(manageApply);
+            //添加到群聊
+            userMapper.increaseChatGroupPlayerAmonut(manageApply.getGroupId());
+            userMapper.joinChatGroup(manageApply.getGroupId(), manageApply.getPlayerId(), LocalDateTime.now());
+            //发出相应的通知
+        } else {
+            //非法参数
+            throw new ParmError("非法参数");
+        }
+    }
+
+    @Override
+    public List<MailMessage> getPlayerMailMessage() {
+
+        return userMapper.getPlayerMailMessage(BaseContext.getCurrentId());
+    }
+
+    @Override
+    public void changeMailMessage() {
+        userMapper.changeMailMessage(BaseContext.getCurrentId());
     }
 
 
