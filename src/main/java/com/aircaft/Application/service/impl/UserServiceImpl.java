@@ -7,16 +7,31 @@ import com.aircaft.Application.common.exception.*;
 import com.aircaft.Application.controller.user.PlayerWebSocket;
 import com.aircaft.Application.mapper.UserMapper;
 import com.aircaft.Application.pojo.dto.AircarftAttributesDTO;
+import com.aircaft.Application.pojo.dto.ArticleChangeDTO;
 import com.aircaft.Application.pojo.dto.ManageApply;
 import com.aircaft.Application.pojo.dto.UserLoginDTO;
 import com.aircaft.Application.pojo.entity.*;
+import com.aircaft.Application.pojo.vo.ArticleVO;
 import com.aircaft.Application.pojo.vo.BackPackPropsVO;
 import com.aircaft.Application.pojo.vo.GetFriendsVO;
 import com.aircaft.Application.service.UserService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +40,7 @@ import java.util.Objects;
 
 @Service
 public class UserServiceImpl implements UserService {
+    private static final String UPLOAD_DIR = System.getProperty("user.dir") + "/uploads/";
     @Autowired
     UserMapper userMapper;
 
@@ -221,6 +237,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public void manageGroupApply(ManageApply manageApply) {
         String groupName = "";
 
@@ -267,7 +284,6 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public List<MailMessage> getPlayerMailMessage() {
-
         return userMapper.getPlayerMailMessage(BaseContext.getCurrentId());
     }
 
@@ -276,5 +292,145 @@ public class UserServiceImpl implements UserService {
         userMapper.changeMailMessage(BaseContext.getCurrentId());
     }
 
+    @Override
+    public Result uploadMarkdownFile(MultipartFile file, String description, String type) throws IOException {
+        //判断文章参数是否符合校验规则
+        //校验一下type是否可以数字化
+        try {
+            Integer.parseInt(type);
+        } catch (NumberFormatException e) {
+            throw new ValidateException("格式错误");
+        }
+        if (description.length() > 100 || description.length() < 10) {
+            throw new ValidateException("格式错误");
+        }
 
+        //还要判断文件名是否重复
+        if (file.isEmpty()) {
+            throw new FileIsEmpty("文件不能为空");
+        }
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || !originalFilename.endsWith(".md")) {
+            throw new FileTypeError("仅支持Markdown文件（.md）");
+        }
+        //检测文件冲突
+        File targetPath = new File(UPLOAD_DIR, originalFilename);
+        if (targetPath.exists()) {
+            throw new FileConflict("文件已存在");
+        }
+        //准备插入数据库的数据
+
+        Article article = new Article();
+        article.setDescription(description);
+        article.setName(originalFilename);
+        article.setCreateDate(LocalDateTime.now());
+        article.setType(Integer.parseInt(type));
+        article.setLikeNum(0);
+        article.setClickNum(0);
+        // 3. 创建存储目录（如果不存在）
+        Path uploadPath = Paths.get(UPLOAD_DIR);
+        if (!Files.exists(uploadPath)) {
+            Files.createDirectories(uploadPath);
+        }
+        // 4. 保存文件到本地
+        Path filePath = uploadPath.resolve(originalFilename);
+        Files.copy(file.getInputStream(), filePath);
+        userMapper.insertArticle(article);
+        return Result.success(filePath);
+
+    }
+
+    @Override
+    public ResponseEntity<Resource> getMarkdownFile(String fileName) {
+        File file = Paths.get(UPLOAD_DIR, fileName).toFile();
+        if (!file.exists()) {
+//            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            throw new FileNotExist("文件不存在");
+        }
+        Resource resource = new FileSystemResource(file);
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.CONTENT_TYPE, "text/markdown; charset=UTF-8");
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(resource);
+    }
+
+    @Override
+    public void FileConflictCheck(String fileName) {
+        File targetPath = new File(UPLOAD_DIR, fileName);
+        if (targetPath.exists()) {
+            throw new FileConflict("文件已存在");
+        }
+    }
+
+    @Override
+    public Result uploadFileChunks(MultipartFile chunk, String fileId, int chunkIndex, int totalChunks) throws IOException {
+        // 创建用户专属的上传目录
+        File userDir = new File(UPLOAD_DIR + fileId + "/");
+        if (!userDir.exists()) {
+            userDir.mkdirs();
+        }
+        // 将每个块单独存储，使用索引号命名
+        File chunkFile = new File(userDir, "chunk_" + chunkIndex);
+        chunk.transferTo(chunkFile);
+        // 检查是否所有块都已上传完成
+        if (Objects.requireNonNull(userDir.list()).length == totalChunks) {
+            File finalFile = new File(UPLOAD_DIR, fileId.split("_")[1]);
+            try (FileOutputStream fos = new FileOutputStream(finalFile, true)) {
+                // 按顺序读取每个块并写入
+                for (int i = 0; i < Objects.requireNonNull(userDir.list()).length; i++) {
+                    File chunkFileNow = new File(userDir, "chunk_" + i);
+                    byte[] chunkData = Files.readAllBytes(chunkFileNow.toPath());
+                    fos.write(chunkData);
+                }
+            }
+            // 清理临时目录
+            for (File file : Objects.requireNonNull(userDir.listFiles())) {
+                file.delete();
+            }
+            userDir.delete();
+        }
+        return Result.success("第" + (chunkIndex + 1) + "上传成功");
+    }
+
+    @Override
+    public List<ArticleVO> getAllArticles() {
+        return userMapper.getAllArticles();
+    }
+
+    @Override
+    public void saveArticleChange(ArticleChangeDTO articleChangeDTO) {
+        userMapper.saveArticleChange(articleChangeDTO);
+    }
+
+    @Override
+    public List<ArticleVO> getFileByType(Integer type) {
+        return userMapper.getFileByType(type);
+    }
+
+    @Override
+    public List<ArticleVO> getFileLimit(Integer offset) {
+        return userMapper.getFileLimit(offset * 10);
+    }
+
+    @Override
+    public List<ArticleVO> getFilePopular() {
+        return userMapper.getFilePopular();
+    }
+
+    @Override
+    public Integer getArticlesClickNumb() {
+        return userMapper.getArticlesClickNumb();
+    }
+
+    @Override
+    public Integer getArticleNumByType(Integer type) {
+        return userMapper.getArticleNumByType(type);
+    }
+
+    @Override
+    public List<ArticleVO> searchArticles(String keys) {
+        return userMapper.searchArticles(keys);
+    }
 }

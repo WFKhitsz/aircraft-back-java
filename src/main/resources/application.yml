@@ -1,6 +1,10 @@
 server:
   port: 8080
 spring:
+  servlet:
+    multipart:
+      max-request-size: 100MB
+      max-file-size: 50MB
   data:
     redis:
       host: localhost
@@ -12,7 +16,8 @@ spring:
     password: admin123
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306
-
+upload:
+  dir:upload
 
 
 
@@ -42,5 +47,5 @@ sky:
     admin-token-name: token
 
     user-secret-key: itcast
-    user-ttl: 72000000000
+    user-ttl: 7200000000000
     user-token-name: authentication

@@ -5,6 +5,7 @@ import com.aircaft.Application.common.constant.JwtClaimsConstant;
 import com.aircaft.Application.common.properties.JwtProperties;
 import com.aircaft.Application.common.utils.JwtUtil;
 import com.aircaft.Application.pojo.dto.AircarftAttributesDTO;
+import com.aircaft.Application.pojo.dto.ArticleChangeDTO;
 import com.aircaft.Application.pojo.dto.ManageApply;
 import com.aircaft.Application.pojo.dto.UserLoginDTO;
 import com.aircaft.Application.pojo.entity.*;
@@ -12,11 +13,13 @@ import com.aircaft.Application.pojo.vo.BackPackPropsVO;
 import com.aircaft.Application.pojo.vo.GetFriendsVO;
 import com.aircaft.Application.pojo.vo.UserLoginVo;
 import com.aircaft.Application.service.UserService;
-import jakarta.websocket.server.PathParam;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Controller;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +27,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/user/user")
 public class UserController {
+
     @Autowired
     UserService userService;
     @Autowired
@@ -157,6 +161,42 @@ public class UserController {
     public Result changeMailMessage() {
         userService.changeMailMessage();
         return Result.success();
+    }
+
+    //处理上传文章
+    @PostMapping("/uploadFile")
+    public Result uploadMarkdownFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("description") String description,
+            @RequestParam("type") String type
+    ) throws IOException {
+        return userService.uploadMarkdownFile(file, description, type);
+    }
+
+    @PostMapping("uploadFileChunks")
+    public Result uploadFileChunks(
+            @RequestParam("file") MultipartFile chunk,
+            @RequestParam("fileId") String fileId,
+            @RequestParam("chunkIndex") int chunkIndex,
+            @RequestParam("totalChunks") int totalChunks
+    ) throws IOException {
+        return userService.uploadFileChunks(chunk, fileId, chunkIndex, totalChunks);
+    }
+
+    @GetMapping("/getFile/{fileName}")
+    public ResponseEntity<Resource> getMarkdownFile(@PathVariable String fileName) {
+        return userService.getMarkdownFile(fileName);
+    }
+
+    @PostMapping("/saveArticleChange")
+    public Result saveArticleChange(@RequestBody ArticleChangeDTO articleChangeDTO) {
+        userService.saveArticleChange(articleChangeDTO);
+        return Result.success();
+    }
+
+    @GetMapping("/getArticlesClickNum")
+    public Result<Integer> getArticlesClickNum() {
+        return Result.success(userService.getArticlesClickNumb());
     }
 
 

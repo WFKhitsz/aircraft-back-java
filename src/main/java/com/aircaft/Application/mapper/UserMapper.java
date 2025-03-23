@@ -2,8 +2,10 @@ package com.aircaft.Application.mapper;
 
 import com.aircaft.Application.common.Result;
 import com.aircaft.Application.pojo.dto.AircarftAttributesDTO;
+import com.aircaft.Application.pojo.dto.ArticleChangeDTO;
 import com.aircaft.Application.pojo.dto.ManageApply;
 import com.aircaft.Application.pojo.entity.*;
+import com.aircaft.Application.pojo.vo.ArticleVO;
 import com.aircaft.Application.pojo.vo.BackPackPropsVO;
 import com.aircaft.Application.pojo.vo.GetFriendsVO;
 import org.apache.ibatis.annotations.*;
@@ -15,7 +17,7 @@ import java.util.List;
 public interface UserMapper {
     @Select("select * from aircraft.player where user_name = #{username}")
     Player getByName(@Param("username") String username);
-    
+
     List<BackPackPropsVO> getPlayerBackpackProps(@Param("id") Integer id);
 
     @Update("update aircraft.player_backpack set amount = amount - 1 where player_id = #{playerId} and prop_id = #{propId}")
@@ -110,4 +112,31 @@ public interface UserMapper {
 
     @Update("update aircraft.player_mail set is_read = 1 where player_id  = #{currentId}")
     void changeMailMessage(@Param("currentId") Integer currentId);
+
+    @Insert("insert into aircraft.article (name, description, click_num, create_date, type, like_num) VALUES (#{name},#{description},#{clickNum},#{createDate},#{type},#{likeNum})")
+    void insertArticle(Article article);
+
+    @Select("select id, name, description, click_num, create_date, type, like_num from aircraft.article order by id DESC ")
+    List<ArticleVO> getAllArticles();
+
+    @Update("update aircraft.article set name = #{name}, description = #{description},type = #{type} where id = #{id}")
+    void saveArticleChange(ArticleChangeDTO articleChangeDTO);
+
+    @Select("select * from aircraft.article where type = #{type} ")
+    List<ArticleVO> getFileByType(@Param("type") Integer type);
+
+    @Select("select * from aircraft.article LIMIT 10 offset #{offset}")
+    List<ArticleVO> getFileLimit(@Param("offset") int offset);
+
+    @Select("select * from aircraft.article ORDER BY click_num DESC LIMIT 10")
+    List<ArticleVO> getFilePopular();
+
+    @Select("SELECT SUM(click_num) from aircraft.article ")
+    Integer getArticlesClickNumb();
+
+    @Select("select count(*) from aircraft.article where type = #{type}")
+    Integer getArticleNumByType(@Param("type") Integer type);
+
+    @Select("select * from aircraft.article where description like  concat('%',#{keys},'%')")
+    List<ArticleVO> searchArticles(@Param("keys") String keys);
 }
